@@ -182,6 +182,52 @@ class XLSXWriter
 		return (count($this->_fonts) - 1);
 	}
 
+	public function addFill($type, $bgColor = "", $fgColor = "")
+	{
+		$fill = array (
+			"type"    => $type,
+			"bgColor" => $bgColor,
+			"fgColor" => $fgColor,
+		);
+
+		$fill["md5"] = md5(serialize($font));
+
+		$this->_fills[] = $fill;
+
+		return (count($this->_fills) - 1);
+	}
+
+	public function addBorder($left = array(), $right = array(), $top = array(), $bottom = array(), $diagonal = array())
+	{
+		$border = array (
+			"left"     => $left,
+			"right"    => $right,
+			"top"      => $top,
+			"bottom"   => $bottom,
+			"diagonal" => $diagonal,
+		);
+
+		$border["md5"] = md5(serialize($border));
+
+		$this->_borders[] = $border;
+
+		return (count($this->_borders) - 1);
+	}
+
+	public function addNumberFormat($format)
+	{
+		$numFmt = array (
+			"format" => $format
+		);
+
+		$numFmt["md5"] = md5(serialize($numFmt));
+
+		$this->_numFmts[] = $numFmt;
+
+		return (count($this->_numFmts) - 1) + 164;
+
+	}
+
 	public function setTimeZone($timeZone)
 	{
 		$this->timeZone = $timeZone;
@@ -200,6 +246,9 @@ class XLSXWriter
 
 	protected function getStyleID($styleData = array(), $format = "string")
 	{
+		if (is_array($styleData) === false)
+			return 0;
+
 		if (isset($styleData["font"])   === false) $styleData["font"]   = 0;
 		if (isset($styleData["fill"])   === false) $styleData["fill"]   = 0;
 		if (isset($styleData["border"]) === false) $styleData["border"] = 0;
@@ -224,6 +273,7 @@ class XLSXWriter
 			$applyFill      = (!empty($styleData["fill"]) ? true : false);
 			$applyBorder    = (!empty($styleData["border"]) ? true : false);
 			$applyAlignment = (!empty($styleData["halign"]) || !empty($styleData["valign"]) ? true : false);
+			$applyNumFormat = (!empty($styleData["numFmt"]) ? true : false);
 
 			$xml  = '<xf numFmtId="' . $styleData["numFmt"]. '" fontId="' . $styleData["font"] . '" fillId="' . $styleData["fill"] . '" borderId="' . $styleData["border"] . '" xfId="0"';
 			
@@ -238,6 +288,9 @@ class XLSXWriter
 
 			if ($applyAlignment === true)
 				$xml .= ' applyAlignment="1"';
+
+			if ($applyNumFormat === true)
+				$xml .= ' applyNumFmt="1"';
 
 			$xml .= '>';
 
@@ -281,9 +334,25 @@ class XLSXWriter
 		$this->styles[$sheetName]["cols"][$col] = $style;
 	}
 
-	public function setColFormat($sheetName, $col, $format)
+	public function setColFormat($sheetName, $cols, $format, $numFmtID = 0)
 	{
-		$this->formats[$sheetName][$col] = $format;
+		if (is_array($cols) && count($cols) == 2)
+		{
+			for ($i = $cols[0]; $i <= $cols[1]; $i++)
+			{
+				$this->formats[$sheetName][$i] = array (
+					"format" => $format,
+					"numFmt" => $numFmtID
+				);
+			}
+		}
+		elseif (is_numeric($cols))
+		{
+			$this->formats[$sheetName][$cols] = array (
+				"format" => $format,
+				"numFmt" => $numFmtID
+			);
+		}
 	}
 
 	protected function tempFilename()
@@ -366,8 +435,6 @@ class XLSXWriter
 			"rowCount"           => 0,
 			"fileWriter"         => new XLSXWriter_BuffererWriter($sheetFilename),
 			"colsWidth"          => array(),
-			"maxCellTagStart"    => 0,
-			"maxCellTagEnd"      => 0,
 			"finalized"          => false,
 		);
 
@@ -444,7 +511,8 @@ class XLSXWriter
 
 			if (isset($this->formats[$sheetName][$columnNumber]))
 			{
-				$cellOptions["format"] = $this->formats[$sheetName][$columnNumber];
+				$cellOptions["format"]          = $this->formats[$sheetName][$columnNumber]["format"];
+				$cellOptions["style"]["numFmt"] = $this->formats[$sheetName][$columnNumber]["numFmt"];
 			}
 
 			$this->writeCell($sheet->fileWriter, $sheet->rowCount, $columnNumber, $value, $cellOptions);
@@ -504,11 +572,11 @@ class XLSXWriter
 		}
 		elseif (is_string($value) === false)
 		{
-			$file->write('<c r="' . $cell . '"' . ($styleID ? ' s="' . $styleID . '"' : '') . ' t="n"><v>' . ($value * 1 ) . '</v></c>');//int,float, etc
+			$file->write('<c r="' . $cell . '"' . ($styleID ? ' s="' . $styleID . '"' : '') . ' t="n"><v>' . ( $value * 1 ) . '</v></c>'); //int,float, etc
 		}
 		elseif ($value{0} != "0" && filter_var($value, FILTER_VALIDATE_INT)) // excel wants to trim leading zeros
 		{ 
-			$file->write('<c r="' . $cell . '"' . ($styleID ? ' s="' . $styleID . '"' : '') . ' t="n"><v>' . ($value) . '</v></c>');//numeric string
+			$file->write('<c r="' . $cell . '"' . ($styleID ? ' s="' . $styleID . '"' : '') . ' t="n"><v>' . ($value) . '</v></c>'); //numeric string
 		} 
 		elseif ($value{0} == "=")
 		{
@@ -531,12 +599,11 @@ class XLSXWriter
 		$file->write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n");
 		$file->write('<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">');
 
-//		$file->write('<numFmts count="4">');
-//		$file->write(	'<numFmt formatCode="GENERAL" numFmtId="164"/>');
-//		$file->write(	'<numFmt formatCode="[$$-1009]#,##0.00;[RED]\-[$$-1009]#,##0.00" numFmtId="165"/>');
-//		$file->write(	'<numFmt formatCode="YYYY-MM-DD\ HH:MM:SS" numFmtId="166"/>');
-//		$file->write(	'<numFmt formatCode="YYYY-MM-DD" numFmtId="167"/>');
-//		$file->write('</numFmts>');
+		/**
+		* numFmts
+		*/
+		$xml = $this->getStylesNumFmtsXML();
+		$file->write($xml);
 
 		/**
 		* Fonts
@@ -605,6 +672,24 @@ class XLSXWriter
 		$this->sharedStringCount++;
 
 		return $stringValue;
+	}
+
+	protected function getStylesNumFmtsXML()
+	{
+		$xml  = '';
+		$xml .= '<numFmts count="' . count($this->_numFmts) . '">';
+
+		$numFmtID = 164;
+
+		foreach ($this->_numFmts as $numFmt)
+		{
+			$xml .= '<numFmt formatCode="' . $numFmt["format"] . '" numFmtId="' . $numFmtID . '"/>';
+			$numFmtID++;
+		}
+
+		$xml .= '</numFmts>';
+
+		return $xml;
 	}
 
 	protected function getStylesFontsXML()

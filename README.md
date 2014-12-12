@@ -9,6 +9,7 @@ It is designed to output an Excel spreadsheet in with (Office 2007+) xlsx format
 * supports PHP 5.2.1+
 * multiple worksheets
 * supports basic styling (more will come)
+* supports custom number formats
 
 Documentation soon
 
@@ -47,6 +48,17 @@ $writer->setAuthor('Doc Author');
 $writer->writeSheet($data1);
 $writer->writeSheet($data2);
 echo $writer->writeToString();
+```
+
+Number formats:
+```php
+$dateFormatID = $writer->addNumberFormat("DD/MM/YYYY");
+$pctFormatID  = $writer->addNumberFormat("0%");
+
+$sheet = "Test";
+
+$writer->setColFormat($sheet, 3, "date", $dateFormatID);
+$writer->setColFormat($sheet, 4, "pct", $pctFormatID);
 ```
 
 Styles:
