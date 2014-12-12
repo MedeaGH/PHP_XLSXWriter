@@ -49,6 +49,39 @@ $writer->writeSheet($data2);
 echo $writer->writeToString();
 ```
 
+Styles:
+```php
+$headers = array ("year", "month","amount");
+
+$datas = array (
+    array ("2003", "1", "220"),
+    array ("2003", "2", "153.5"),
+);
+
+$writer = new XLSXWriter();
+
+$fontID = $writer->addFont("Arial", 11, array ("bold"));
+
+$sheet = "Test";
+
+$headerStyle = array (
+	"font"   => $fontID,
+	"fill"   => 2, # rgb='00F2F2F2'
+	"border" => 1, # thin, indexed='64'
+	"halign" => "center",
+	"valign" => "center",
+);
+
+$writer->writeSheetHeader($sheet, $headers, $headerStyle);
+
+foreach ($datas as $row)
+{
+	$writer->writeSheetRow($sheet, $row);
+}
+
+$writer->writeToFile("output.xlsx");
+```
+
 Cell Formatting:
 ```php
 $header = array(
