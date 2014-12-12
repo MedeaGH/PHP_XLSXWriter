@@ -8,9 +8,9 @@ This library is designed to be lightweight, and have relatively low memory usage
 It is designed to output an Excel spreadsheet in with (Office 2007+) xlsx format, with just basic features supported:
 * supports PHP 5.2.1+
 * multiple worksheets
-* supports a few simple cell formats:
-  * simple $0.00 currency format 
-  * simple ``Y-M-D/Y-M-D H:m:s`` format
+* supports basic styling (more will come)
+
+Documentation soon
 
 UTF8
 ```php
