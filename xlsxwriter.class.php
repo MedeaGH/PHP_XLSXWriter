@@ -1,7 +1,9 @@
 <?php
+
 /*
  * @license MIT License
- * */
+ *
+*/
 
 if (!class_exists("ZipArchive")) { Throw New Exception("ZipArchive not found"); }
 
@@ -23,10 +25,12 @@ class XLSXWriter
 	protected $defaultFontname     = "Calibri";
 	protected $defaultFontsize     = 11;
 
-	protected $defaultColWidth     = 20;
+	protected $defaultColsWidth    = 20;
+
+	protected $tabRatio            = 212;
 
 	# Encoding
-	protected $encodeToUTF8        = false;
+	protected $encodeUTF8          = false;
 
 	# Timezone
 	protected $timeZone            = "Europe/Paris";
@@ -43,6 +47,8 @@ class XLSXWriter
 	protected $_fonts   = array();
 	protected $_fills   = array();
 	protected $_borders = array();
+
+	protected $_merges  = array();
 
 	protected $_styles  = array();
 	
@@ -96,11 +102,13 @@ class XLSXWriter
 			"type" => "grey125",
 		);
 
+		# GRAY
 		$this->_fills[] = array (
 			"type"    => "solid",
 			"fgColor" => "00F2F2F2",
 		);
 
+		# RED
 		$this->_fills[] = array (
 			"type"    => "solid",
 			"fgColor" => "00FF8C8C",
@@ -239,9 +247,19 @@ class XLSXWriter
 		$this->author = $author;
 	}
 
+	public function setTabRatio($tabRatio)
+	{
+		$this->tabRatio = $tabRatio;
+	}
+
+	public function encodeUTF8($value)
+	{
+		$this->encodeUTF8 = (is_bool($value) ? $value : true);
+	}
+
 	public function setUTF8($value)
 	{
-		$this->encodeToUTF8 = (is_bool($value) ? $value : true);
+		$this->encodeUTF8 = (is_bool($value) ? $value : true);
 	}
 
 	protected function getStyleID($styleData = array(), $format = "string")
@@ -324,35 +342,145 @@ class XLSXWriter
 	/**
 	* $type 
 	*/
-	public function setStyles($sheetName, $type, $style)
+	public function setStyles($sheetName, $type, array $style)
 	{
 		$this->styles[$sheetName][$type] = $style;
 	}
 
+	/**
+	* This will override the style of a column
+	*/
 	public function setColStyle($sheetName, $col, $style)
 	{
 		$this->styles[$sheetName]["cols"][$col] = $style;
 	}
 
-	public function setColFormat($sheetName, $cols, $format, $numFmtID = 0)
+	/**
+	* This will override the style of multiple columns
+	*/
+	public function setColsStyle($sheetName, array $cols, array $style)
 	{
-		if (is_array($cols) && count($cols) == 2)
+		if (count($col) == 2 && is_numeric($col[0]) && is_numeric($col[1]))
 		{
-			for ($i = $cols[0]; $i <= $cols[1]; $i++)
+			$range = range($col[0], $col[1]);
+			
+			foreach ($range as $c)
 			{
-				$this->formats[$sheetName][$i] = array (
-					"format" => $format,
-					"numFmt" => $numFmtID
-				);
+				$this->setColStyle($sheetName, $c, $style);
 			}
 		}
-		elseif (is_numeric($cols))
+	}
+
+	/**
+	* This will merge current column style with the new one
+	*/
+	public function addColStyle($sheetName, $col, $style)
+	{
+		if (isset($this->styles[$sheetName]["cols"][$col]) === false)
 		{
-			$this->formats[$sheetName][$cols] = array (
-				"format" => $format,
-				"numFmt" => $numFmtID
-			);
+			if (!empty($this->styles[$sheetName]["row"]))
+			{
+				$style = array_merge($this->styles[$sheetName]["row"], $style);
+			}
+
+			$this->setColStyle($sheetName, $col, $style);
+			return;
 		}
+
+		$style = array_merge($this->styles[$sheetName]["cols"][$col], $style);
+
+		$this->setColStyle($sheetName, $col, $style);
+	}
+
+	/**
+	* This will merge mulitple columns style with the new one
+	*/
+	public function addColsStyle($sheetName, $col, $style)
+	{
+		if (count($col) == 2 && is_numeric($col[0]) && is_numeric($col[1]))
+		{
+			$range = range($col[0], $col[1]);
+			
+			foreach ($range as $c)
+			{
+				$this->addColStyle($sheetName, $c, $style);
+			}
+		}
+	}
+
+	/**
+	* Remove a specific style for one column
+	*/
+	public function removeColStyle($sheetName, $col, $styleKeys)
+	{
+		if (isset($this->styles[$sheetName]["cols"][$col]) === false)
+		{
+			return;
+		}
+
+		if (empty($styleKeys))
+		{
+			unset($this->styles[$sheetName]["cols"][$col]);
+			return;
+		}
+
+		if (is_array($styleKeys) === false)
+		{
+			$styleKeys = array ( $styleKeys );
+		}
+		
+		foreach ($styleKeys as $sKey)
+		{
+			if (isset($this->styles[$sheetName]["cols"][$col][$sKey]))
+			{
+				unset($this->styles[$sheetName]["cols"][$col][$sKey]);
+			}
+		}
+	}
+
+	/**
+	* Remove a specific style for multiple columns
+	*/
+	public function removeColsStyle($sheetName, $col, $styleKeys)
+	{
+		if (count($col) == 2 && is_numeric($col[0]) && is_numeric($col[1]))
+		{
+			$range = range($col[0], $col[1]);
+			
+			foreach ($range as $c)
+			{
+				$this->removeColStyle($sheetName, $c, $styleKeys);
+			}
+		}
+	}
+
+	public function setColFormat($sheetName, $col, $format, $numFmtID = 0)
+	{
+		$this->formats[$sheetName][$col] = array (
+			"format" => $format,
+			"numFmt" => $numFmtID
+		);
+	}
+
+	public function selColsFormat($sheetName, $col, $format, $numFmtID = 0)
+	{
+		if (count($col) == 2 && is_numeric($col[0]) && is_numeric($col[1]))
+		{
+			$range = range($col[0], $col[1]);
+			
+			foreach ($range as $c)
+			{
+				$this->setColFormat($sheetName, $c, $format, $numFmtID);
+			}
+		}
+	}
+
+	public function mergeCells($sheetName, $row, $from, $to)
+	{
+		$this->_merges[$sheetName][$row] = array (
+			"from" => ($from - 1),
+			"to"   => ($to - 1)
+		);
 	}
 
 	protected function tempFilename()
@@ -385,7 +513,10 @@ class XLSXWriter
 			self::finalizeSheet($sheetName); //making sure all footers have been written
 		}
 
-		@unlink($filename); //if the zip already exists, overwrite it
+		if (file_exists($filename) === true)
+		{
+			@unlink($filename); //if the zip already exists, overwrite it
+		}
 
 		$zip = new ZipArchive();
 		if (empty($this->sheets))                       { self::log("Error in ".__CLASS__."::".__FUNCTION__.", no worksheets defined."); return; }
@@ -433,12 +564,26 @@ class XLSXWriter
 			"sheetName"          => $sheetName,
 			"xmlName"            => $sheetXMLName,
 			"rowCount"           => 0,
+			"colCount"           => 0,
 			"fileWriter"         => new XLSXWriter_BuffererWriter($sheetFilename),
 			"colsWidth"          => array(),
+			"autoFilter"         => false,
 			"finalized"          => false,
 		);
 
-		$colSize = (isset($sheetOptions["colSize"]) ? $sheetOptions["colSize"] : $this->defaultColWidth);
+		$colsWidth = $this->defaultColsWidth;
+
+		if (!empty($sheetOptions["colsWidth"]))
+		{
+			if (is_numeric($sheetOptions["colsWidth"]))
+			{
+				$colsWidth = $sheetOptions["colsWidth"];
+			}
+			elseif (is_array($sheetOptions["colsWidth"]))
+			{
+				
+			}
+		}
 
 		$sheet = &$this->sheets[$sheetName];
 		$tabSelected = count($this->sheets) == 1 ? "true" : "false";
@@ -452,12 +597,25 @@ class XLSXWriter
 		$sheet->fileWriter->write(    '<sheetView workbookViewId="0"/>');
 		$sheet->fileWriter->write(  '</sheetViews>');
 		$sheet->fileWriter->write(  '<cols>');
-		$sheet->fileWriter->write(    '<col min="1" max="' . self::EXCEL_2007_MAX_COL . '" style="0" customWidth="1" width="' . $colSize . '"/>');
+		$sheet->fileWriter->write(    '<col min="1" max="' . self::EXCEL_2007_MAX_COL . '" style="0" customWidth="1" width="' . $colsWidth . '"/>');
 		$sheet->fileWriter->write(  '</cols>');
 		$sheet->fileWriter->write(  '<sheetData>');
 	}
 
-	public function writeSheetHeader($sheetName, array $row, array $style = array())
+	public function setSheetOptions($sheetOptions)
+	{
+		if ($this->currentSheet == "")
+			return;
+
+		$sheet = &$this->sheets[$this->currentSheet];
+
+		if (isset($sheetOptions["autoFilter"]) && is_bool($sheetOptions["autoFilter"]))
+		{
+			$sheet->autoFilter = $sheetOptions["autoFilter"];
+		}
+	}
+
+	public function writeSheetHeader($sheetName, array $row, array $style = array(), array $options = array())
 	{
 		if (empty($sheetName) || empty($row))
 			return;
@@ -467,7 +625,12 @@ class XLSXWriter
 
 		$rowStyle = (isset($this->styles[$sheetName]["header"]) ? $this->styles[$sheetName]["header"] : $style);
 
-		$sheet->fileWriter->write('<row r="' . ($sheet->rowCount + 1) . '">');
+		$sheet->fileWriter->write('<row r="' . ($sheet->rowCount + 1) . '"' . (!empty($options["raw"]) ? " " . $options["raw"] : "") . '>');
+
+		if (!empty($options["mergeCell"]))
+		{
+			$this->mergeCells($sheetName, $sheet->rowCount, $options["mergeCell"]["from"], $options["mergeCell"]["to"]);
+		}
 
 		foreach ($row as $columnNumber => $value)
 		{
@@ -485,7 +648,7 @@ class XLSXWriter
 		$this->currentSheet = $sheetName;
 	}
 
-	public function writeSheetRow($sheetName, array $row, array $style = array())
+	public function writeSheetRow($sheetName, array $row, array $style = array(), array $options = array())
 	{
 		if (empty($sheetName) || empty($row))
 			return;
@@ -495,7 +658,12 @@ class XLSXWriter
 
 		$rowStyle = (isset($this->styles[$sheetName]["row"])  ? $this->styles[$sheetName]["row"] : $style);
 
-		$sheet->fileWriter->write('<row r="' . ($sheet->rowCount + 1) . '">');
+		$sheet->fileWriter->write('<row r="' . ($sheet->rowCount + 1) . '"' . (!empty($options["raw"]) ? " " . $options["raw"] : "") . '>');
+
+		if (!empty($options["mergeCell"]))
+		{
+			$this->mergeCells($sheetName, $sheet->rowCount, $options["mergeCell"]["from"], $options["mergeCell"]["to"]);
+		}
 
 		foreach ($row as $columnNumber => $value)
 		{
@@ -520,6 +688,7 @@ class XLSXWriter
 
 		$sheet->fileWriter->write('</row>');
 		$sheet->rowCount++;
+		$sheet->colCount = max($sheet->colCount, $columnNumber);
 
 		$this->currentSheet = $sheetName;
 	}
@@ -532,6 +701,30 @@ class XLSXWriter
 		$sheet = &$this->sheets[$sheetName];
 
 		$sheet->fileWriter->write(    '</sheetData>');
+
+		# mergeCells
+		if (!empty($this->_merges[$sheetName]))
+		{
+			$merges = $this->_merges[$sheetName];
+			$mergeCount = count($merges);
+
+			$sheet->fileWriter->write('<mergeCells count="' . $mergeCount . '">');
+			
+			foreach ($merges as $row => $merge)
+			{
+				$mergeFrom = $this->xlsCell($row, $merge["from"]);
+				$mergeTo   = $this->xlsCell($row, $merge["to"]);
+				$sheet->fileWriter->write('<mergeCell ref="' . $mergeFrom . ':' . $mergeTo . '"/>');
+			}
+
+			$sheet->fileWriter->write('</mergeCells>');
+		}
+
+		if ($sheet->autoFilter === true)
+		{
+			$sheet->fileWriter->write(	'<autoFilter ref="' . $this->xlsCell(0, 0) . ':' . $this->xlsCell($sheet->rowCount, $sheet->colCount) . '"/>');
+		}
+
 		$sheet->fileWriter->write('</worksheet>');
 
 		$sheet->fileWriter->close();
@@ -552,7 +745,7 @@ class XLSXWriter
 		$this->finalizeSheet($sheetName);
 	}
 
-	protected function writeCell(XLSXWriter_BuffererWriter &$file, $rowNumber, $columnNumber, $value, $cellOptions = array())
+	protected function writeCell(XLSXWriter_BuffererWriter &$file, $rowNumber, $columnNumber, $value, array $cellOptions)
 	{
 		$cell = self::xlsCell($rowNumber, $columnNumber);
 		
@@ -575,7 +768,7 @@ class XLSXWriter
 			$file->write('<c r="' . $cell . '"' . ($styleID ? ' s="' . $styleID . '"' : '') . ' t="n"><v>' . ( $value * 1 ) . '</v></c>'); //int,float, etc
 		}
 		elseif ($value{0} != "0" && filter_var($value, FILTER_VALIDATE_INT)) // excel wants to trim leading zeros
-		{ 
+		{
 			$file->write('<c r="' . $cell . '"' . ($styleID ? ' s="' . $styleID . '"' : '') . ' t="n"><v>' . ($value) . '</v></c>'); //numeric string
 		} 
 		elseif ($value{0} == "=")
@@ -584,7 +777,7 @@ class XLSXWriter
 		} 
 		elseif ($value !== "")
 		{
-			$value = $this->utf8($value);
+			$value = $this->encodeString($value);
 
 			$file->write('<c r="' . $cell . '"' . ($styleID ? ' s="' . $styleID . '"' : '') . ' t="s"><v>' . self::xmlSpecialChars($this->setSharedString($value)) . '</v></c>');
 		}
@@ -666,7 +859,7 @@ class XLSXWriter
 		else
 		{
 			$stringValue = count($this->sharedStrings);
-			$this->sharedStrings[$v] = $this->utf8($stringValue);
+			$this->sharedStrings[$v] = $this->encodeString($stringValue);
 		}
 		
 		$this->sharedStringCount++;
@@ -854,7 +1047,7 @@ class XLSXWriter
 
 	protected function buildCoreXML()
 	{
-		$author = $this->utf8($this->author);
+		$author = $this->encodeString($this->author);
 
 		$xml  = '';
 		$xml .= '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n";
@@ -889,12 +1082,12 @@ class XLSXWriter
 		$xml .= '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n";
 		$xml .= '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
 		$xml .= '<fileVersion appName="Calc"/><workbookPr backupFile="false" showObjects="all" date1904="false"/><workbookProtection/>';
-		$xml .= '<bookViews><workbookView activeTab="0" firstSheet="0" showHorizontalScroll="true" showSheetTabs="true" showVerticalScroll="true" tabRatio="212" windowHeight="8192" windowWidth="16384" xWindow="0" yWindow="0"/></bookViews>';
+		$xml .= '<bookViews><workbookView activeTab="0" firstSheet="0" showHorizontalScroll="true" showSheetTabs="true" showVerticalScroll="true" tabRatio="' . $this->tabRatio . '" windowHeight="8192" windowWidth="16384" xWindow="0" yWindow="0"/></bookViews>';
 		$xml .= '<sheets>';
 
 		foreach ($this->sheets as $sheetName => $sheet)
 		{
-			$sheetName = $this->utf8($sheetName);
+			$sheetName = $this->encodeString($sheetName);
 
 			$xml .= '<sheet name="' . self::xmlSpecialChars($sheetName) . '" sheetId="' . ($i + 1) . '" state="visible" r:id="rId' . ($i + 2) . '"/>';
 			$i++;
@@ -907,9 +1100,9 @@ class XLSXWriter
 		return $xml;
 	}
 
-	protected function utf8($string)
+	protected function encodeString($string)
 	{
-		return ($this->encodeToUTF8 === true ? utf8_encode($string) : $string);
+		return ($this->encodeUTF8 === true ? utf8_encode($string) : $string);
 	}
 
 	protected function buildWorkbookRelsXML()
