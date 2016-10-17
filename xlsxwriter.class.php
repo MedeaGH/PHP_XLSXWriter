@@ -648,6 +648,17 @@ class XLSXWriter
 		$this->currentSheet = $sheetName;
 	}
 
+	public function emptyRow($sheetName, $rowCount = 1)
+	{
+		if (empty($sheetName))
+			return;
+
+		self::initializeSheet($sheetName);
+		$sheet = &$this->sheets[$sheetName];
+		
+		$sheet->rowCount = $sheet->rowCount + $rowCount;
+	}
+
 	public function writeSheetRow($sheetName, array $row, array $style = array(), array $options = array())
 	{
 		if (empty($sheetName) || empty($row))
